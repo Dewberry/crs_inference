@@ -1,0 +1,12 @@
+[project]
+name = "crs-inference"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.37.28",
+    "geopandas>=1.0.1",
+    "obstore>=0.6.0",
+    "shapely>=2.1.0",
+]
