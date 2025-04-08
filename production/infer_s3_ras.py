@@ -3,6 +3,7 @@
 import json
 import sqlite3
 import sys
+import traceback
 from pathlib import Path
 
 from crs_inference.data_models import CountyTargetCache, RasGeometry
@@ -26,6 +27,9 @@ class Database:
         with sqlite3.connect(self.db_path) as con:
             cur = con.cursor()
             cur.execute("CREATE TABLE IF NOT EXISTS models (uri TEXT PRIMARY KEY, county TEXT, crs TEXT)")
+            cur.execute(
+                "CREATE TABLE IF NOT EXISTS status (uri TEXT PRIMARY KEY, status TEXT, error TEXT, tb TEXT, FOREIGN KEY(uri) REFERENCES models(uri))"
+            )
         con.close()
 
     @property
@@ -53,10 +57,18 @@ class Database:
             cur.execute("UPDATE models SET crs = ? WHERE uri = ?", (crs, model_uri))
         con.close()
 
+    def log_status(self, uri: str, status: str, error: str = "", tb: str = ""):
+        """Log the status of a model to database."""
+        with sqlite3.connect(self.db_path) as con:
+            cur = con.cursor()
+            cur.execute(
+                "INSERT OR REPLACE INTO status(uri, status, error, tb) VALUES(?, ?, ?, ?)", (uri, status, error, tb)
+            )
+        con.close()
+
 
 def identify_models(uri: str):
     """Identify all models and their counties in an S3 prefix."""
-    # meta_packages = search_s3_boto3(uri, "mip_package_geolocation_metadata.json")
     meta_packages = find_metadata(uri)
     models = []
     for i in meta_packages:
@@ -88,18 +100,34 @@ def process_path(meta_uri: str):
     return (geometry_uri, json.dumps(counties))
 
 
+def process_wrapper(func):
+    """Single-use wrapper for process_model function."""
+
+    def wrap(geom_uri: str, counties: str, db: Database):
+        try:
+            res = func(geom_uri, counties, db)
+        except Exception as e:
+            db.log_status(geom_uri, "Failure", str(e), traceback.format_exc())
+            return None
+        db.log_status(geom_uri, "Success")
+        return res
+
+    return wrap
+
+
+@process_wrapper
 def process_model(geom_uri: str, counties: str, db: Database):
     """Infer the CRS for a model."""
     # Load geom
     geom = RasGeometry.from_s3(geom_uri)
+    geom.validate()
 
     # Load target
     target = CountyTargetCache.instance().get_county_target(counties)
 
     # Infer CRS
-    if geom.valid_geometry:
-        crs = geom.infer_crs(target)
-        db.log_crs(geom_uri, crs)
+    crs = geom.infer_crs(target)
+    db.log_crs(geom_uri, crs)
 
 
 def main(uri: str):

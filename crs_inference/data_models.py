@@ -10,6 +10,7 @@ from pyproj import CRS, Transformer
 from shapely.geometry import MultiLineString, Polygon
 from shapely.geometry.base import BaseGeometry
 
+from crs_inference.errors import EmptyGeometryError, HTMLDownloadError
 from crs_inference.ras import Reach, search_contents
 from crs_inference.utils import get_ras_crs, get_s3_content
 
@@ -121,9 +122,17 @@ class RasGeometry(Geometry):
         return MultiLineString([r.linestring for r in self.reaches])
 
     @property
-    def valid_geometry(self) -> bool:
+    def invalid_geometry(self) -> bool:
         """Check if geometry is valid."""
-        return not self.geometry.is_empty
+        return self.geometry.is_empty
+
+    def validate(self):
+        """Check if geometry is valid and raise informative error."""
+        if self.invalid_geometry:
+            if any(["<html>" in i for i in self.contents.lower]):
+                raise HTMLDownloadError()
+        else:
+            raise EmptyGeometryError()
 
 
 class CountyTargetCache:
