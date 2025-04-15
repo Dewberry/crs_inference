@@ -22,6 +22,15 @@ def load_counties():
     return gpd.read_file("crs_inference/data/counties.gpkg", layer="counties")
 
 
+def count_intersections(geom):
+    """Count how many times a geometry intersects NHD."""
+    filtered = gpd.read_file("NHD_H_National_GPKG.gpkg", layer="NHDFlowline", mask=geom)
+    if len(filtered) == 0:
+        return 0
+    intersections = filtered.intersection(geom).explode()
+    return len(intersections)
+
+
 ### S3 Utilities ###
 
 

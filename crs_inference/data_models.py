@@ -1,25 +1,32 @@
 """Classes for various package processes."""
 
 import json
+import logging
+import os
+import warnings
 from functools import cached_property
 
 import geopandas as gpd
-import pandas as pd
 import shapely
 from pyproj import CRS, Transformer
 from shapely.geometry import MultiLineString, Polygon
 from shapely.geometry.base import BaseGeometry
 
+from crs_inference.consts import LATENT_CRS
 from crs_inference.errors import EmptyGeometryError, HTMLDownloadError
 from crs_inference.ras import Reach, search_contents
-from crs_inference.utils import get_ras_crs, get_s3_content
+from crs_inference.utils import count_intersections, get_ras_crs, get_s3_content
+
+warnings.filterwarnings("ignore", module="pyogrio")
+
+logger = logging.getLogger(__name__)
 
 
 class Target:
     """Class representing some geometry with which another geometry falls."""
 
     def __init__(self, geometry: Polygon, crs: CRS):
-        self.crs = CRS("EPSG:4326")
+        self.crs = LATENT_CRS
         if crs != self.crs:
             transformer = Transformer.from_crs(crs, self.crs, always_xy=True)
             geometry = shapely.ops.transform(transformer.transform, self.geometry)
@@ -36,13 +43,13 @@ class Target:
     def local_projections(self) -> list[CRS]:
         """Get CRS with area of use containing the geometry."""
         local_projections = self.intersect_df[self.intersect_df["local"]][["auth_name", "code"]].values
-        return [CRS.from_authority(i, j) for i, j in local_projections]
+        return [f"{i}:{j}" for i, j in local_projections]
 
     @property
     def non_local_projections(self) -> list[CRS]:
         """Get CRS with area of use containing the geometry."""
         non_local_projections = self.intersect_df[~self.intersect_df["local"]][["auth_name", "code"]].values
-        return [CRS.from_authority(i, j) for i, j in non_local_projections]
+        return [f"{i}:{j}" for i, j in non_local_projections]
 
 
 class Geometry:
@@ -53,10 +60,17 @@ class Geometry:
 
     def infer_crs(self, target: Target) -> str:
         """Find the crs leading to most overlap between geometry and target."""
-        best_crs, overlap = self.find_most_overlap(target, target.local_projections)
+        logger.info(f"Inferring CRS on process ID {os.getpid()}")
+        best_crs, overlap, _ = self.find_most_overlap(target, target.local_projections)
         if best_crs is not None:
+            logger.info(f"Selected CRS {best_crs} on process ID {os.getpid()}")
             return best_crs
-        best_crs, overlap = self.find_most_overlap(target, target.non_local_projections)
+        logger.info(f"Trying backup CRS on process ID {os.getpid()}")
+        best_crs, overlap, _ = self.find_most_overlap(target, target.non_local_projections)
+        if best_crs is not None:
+            logger.info(f"Selected CRS {best_crs} on process ID {os.getpid()}")
+        else:
+            logger.info(f"No valid CRS found on process ID {os.getpid()}")
         return best_crs
 
     def reproject(self, from_crs: CRS, to_crs: CRS) -> BaseGeometry:
@@ -64,27 +78,38 @@ class Geometry:
         transformer = Transformer.from_crs(from_crs, to_crs, always_xy=True)
         return shapely.ops.transform(transformer.transform, self.geometry)
 
-    def find_most_overlap(self, target: Target, crs_list: list[CRS]) -> tuple:
+    def find_most_overlap(self, target: Target, crs_list: list[str]) -> tuple:
         """Find the CRS that yields the most overlap between geometry and target."""
         overlap_pcts = []
         authorities = []
         codes = []
+        geoms = []
+        transform_caches = TransformerCache.instance()
         for crs in crs_list:
-            projected_geom = self.reproject(crs, target.crs)
+            projected_geom = transform_caches.transform(self.geometry, crs)
             if projected_geom.is_valid:
                 overlap = projected_geom.intersection(target.geometry).length / projected_geom.length
                 overlap_pcts.append(overlap)
-                authorities.append(crs.to_authority()[0])
-                codes.append(crs.to_authority()[1])
-        overlap_df = pd.DataFrame({"authority": authorities, "code": codes, "overlap_pct": overlap_pcts})
+                authorities.append(crs.split(":")[0])
+                codes.append(crs.split(":")[1])
+                geoms.append(projected_geom)
+        overlap_df = gpd.GeoDataFrame(
+            {"authority": authorities, "code": codes, "overlap_pct": overlap_pcts, "geometry": geoms}, crs=LATENT_CRS
+        )
         overlap_df["overlap_pct"] = overlap_df["overlap_pct"].round(3)
         overlap_df = overlap_df.sort_values(["overlap_pct", "code"], ascending=[False, True])
+        best_crs = overlap_df[overlap_df["overlap_pct"] == overlap_df["overlap_pct"].max()].copy()
+        if len(best_crs) > 1:  # tie break
+            best_crs["intersections"] = best_crs.to_crs("EPSG:4269").geometry.map(lambda r: count_intersections(r))
+            best_crs = best_crs[best_crs["intersections"] == best_crs["intersections"].max()].copy()
+            if len(best_crs) > 1:
+                best_crs = best_crs[best_crs["code"] == best_crs["code"].min()].copy()
 
-        best_crs = overlap_df.iloc[0]
+        best_crs = best_crs.iloc[0]
         if best_crs.overlap_pct < 0.0011:  # 0.1%
-            return None, 0
+            return None, 0, overlap_df
         else:
-            return f"{best_crs.authority}:{best_crs.code}", best_crs.overlap_pct
+            return f"{best_crs.authority}:{best_crs.code}", best_crs.overlap_pct, overlap_df
 
 
 class RasGeometry(Geometry):
@@ -96,12 +121,14 @@ class RasGeometry(Geometry):
     @classmethod
     def from_s3(cls, href: str):
         """Load a geometry file from AWS S3."""
+        logger.info(f"Loading RAS geometry at {href}")
         contents = get_s3_content(href)
         return cls(contents)
 
     @classmethod
     def from_file(cls, href: str):
         """Load a geometry file from a local file."""
+        logger.info(f"Loading RAS geometry at {href}")
         with open(href) as f:
             contents = f.read().splitlines()
 
@@ -129,10 +156,10 @@ class RasGeometry(Geometry):
     def validate(self):
         """Check if geometry is valid and raise informative error."""
         if self.invalid_geometry:
-            if any(["<html>" in i for i in self.contents.lower]):
+            if any(["<html>" in i.lower() for i in self.contents]):
                 raise HTMLDownloadError()
-        else:
-            raise EmptyGeometryError()
+            else:
+                raise EmptyGeometryError()
 
 
 class CountyTargetCache:
@@ -153,6 +180,7 @@ class CountyTargetCache:
 
     def create_target(self, county: str | list) -> Target:
         """Load a target from a county boundary."""
+        logger.info(f"Creating new target for {str(county)}")
         if isinstance(county, list):
             geom = self.gdf[self.gdf["GEOID"].isin(county)].union_all()
         elif isinstance(county, str):
@@ -162,7 +190,7 @@ class CountyTargetCache:
 
         return Target(geom, self.gdf.crs)
 
-    def get_county_target(self, county: str | list):
+    def get_county_target(self, county: str | list) -> Target:
         """Get or create a Target for a county."""
         if isinstance(county, list):
             idx_str = json.dumps(county)
@@ -175,3 +203,29 @@ class CountyTargetCache:
             self.cache[idx_str] = self.create_target(county)
 
         return self.cache[idx_str]
+
+
+class TransformerCache:
+    """Cache all the CRS transformers."""
+
+    _instance = None
+
+    def __init__(self):
+        raise RuntimeError("Call instance() instead")
+
+    @classmethod
+    def instance(cls):
+        if cls._instance is None:
+            logging.info("Creating transformer cache.  This may take a while.")
+            cls._instance = cls.__new__(cls)
+            crs_gdf = get_ras_crs()
+            cls.transformers = {}
+            for ind, r in crs_gdf.iterrows():
+                name = f"{r.auth_name}:{r.code}"
+                from_crs = CRS(name)
+                cls.transformers[name] = Transformer.from_crs(from_crs, LATENT_CRS, always_xy=True)
+        return cls._instance
+
+    def transform(self, geometry: BaseGeometry, crs: str) -> BaseGeometry:
+        """Use a cached transform to transform a geometry."""
+        return shapely.ops.transform(self.transformers[crs].transform, geometry)
