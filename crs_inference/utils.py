@@ -86,7 +86,7 @@ def find_metadata(uri: str) -> list:
 
     # Search for meta in subdirectory
     results = []
-    for i in list(sub_prefixes)[:100]:
+    for i in list(sub_prefixes):
         try:
             prefix = i + "mip_package_geolocation_metadata.json"
             s3_client.head_object(Bucket=bucket, Key=prefix)

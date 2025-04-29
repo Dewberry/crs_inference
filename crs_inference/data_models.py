@@ -61,17 +61,17 @@ class Geometry:
     def infer_crs(self, target: Target) -> str:
         """Find the crs leading to most overlap between geometry and target."""
         logger.info(f"Inferring CRS on process ID {os.getpid()}")
-        best_crs, overlap, _ = self.find_most_overlap(target, target.local_projections)
+        best_crs, _, overlap_df = self.find_most_overlap(target, target.local_projections)
         if best_crs is not None:
             logger.info(f"Selected CRS {best_crs} on process ID {os.getpid()}")
-            return best_crs
+            return best_crs, overlap_df
         logger.info(f"Trying backup CRS on process ID {os.getpid()}")
-        best_crs, overlap, _ = self.find_most_overlap(target, target.non_local_projections)
+        best_crs, _, overlap_df = self.find_most_overlap(target, target.non_local_projections)
         if best_crs is not None:
             logger.info(f"Selected CRS {best_crs} on process ID {os.getpid()}")
         else:
             logger.info(f"No valid CRS found on process ID {os.getpid()}")
-        return best_crs
+        return best_crs, overlap_df
 
     def reproject(self, from_crs: CRS, to_crs: CRS) -> BaseGeometry:
         """Reproject the geometry from one crs to another."""
@@ -98,18 +98,27 @@ class Geometry:
         )
         overlap_df["overlap_pct"] = overlap_df["overlap_pct"].round(3)
         overlap_df = overlap_df.sort_values(["overlap_pct", "code"], ascending=[False, True])
-        best_crs = overlap_df[overlap_df["overlap_pct"] == overlap_df["overlap_pct"].max()].copy()
+        best_crs = overlap_df[
+            (overlap_df["overlap_pct"] == overlap_df["overlap_pct"].max()) & (overlap_df["overlap_pct"] != 0)
+        ].copy()
+        if len(best_crs) == 0:
+            return None, 0, overlap_df[overlap_df["overlap_pct"] > 0].copy()
         if len(best_crs) > 1:  # tie break
             best_crs["intersections"] = best_crs.to_crs("EPSG:4269").geometry.map(lambda r: count_intersections(r))
             best_crs = best_crs[best_crs["intersections"] == best_crs["intersections"].max()].copy()
             if len(best_crs) > 1:
-                best_crs = best_crs[best_crs["code"] == best_crs["code"].min()].copy()
+                best_crs["code_num"] = best_crs["code"].apply(lambda x: int(x.split(":")[-1]))
+                best_crs = best_crs[best_crs["code_num"] == best_crs["code_num"].min()].copy()
 
         best_crs = best_crs.iloc[0]
         if best_crs.overlap_pct < 0.0011:  # 0.1%
-            return None, 0, overlap_df
+            return None, 0, overlap_df[overlap_df["overlap_pct"] > 0].copy()
         else:
-            return f"{best_crs.authority}:{best_crs.code}", best_crs.overlap_pct, overlap_df
+            return (
+                f"{best_crs.authority}:{best_crs.code}",
+                best_crs.overlap_pct,
+                overlap_df[overlap_df["overlap_pct"] > 0].copy(),
+            )
 
 
 class RasGeometry(Geometry):
