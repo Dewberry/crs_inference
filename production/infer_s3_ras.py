@@ -10,7 +10,6 @@ import traceback
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from uuid import uuid4
 
 import geopandas as gpd
 import pandas as pd
@@ -195,12 +194,19 @@ def process_model(geom_uri: str, counties: str, db: Database, debug: bool = Fals
 def process_runner(geom_uri: str, counties: str, db: Database):
     """Catch errors on process_model."""
     try:
+        db.log_status(geom_uri, "Processing")
+        t1 = time.perf_counter()
         res = process_model(geom_uri, counties, db)
     except Exception as e:
         logging.error(f"Error on {geom_uri}")
         db.log_status(geom_uri, "Failure", str(e), traceback.format_exc())
-        return None
-    db.log_status(geom_uri, "Success")
+    else:
+        db.log_status(geom_uri, "Success")
+    t2 = time.perf_counter()
+    logging.info(f"finished {geom_uri} in {round(t2 - t1, 2)} seconds")
+    logging.info(f"{round(psutil.virtual_memory()[2], 2)}% memory used")
+    logging.info(f"{round(psutil.cpu_percent(), 2)}% cpu used")
+    return geom_uri
 
 
 def main(uri: str):
@@ -211,6 +217,34 @@ def main(uri: str):
     db.log_models(models)
     for geom_uri, counties in db.models:
         process_runner(geom_uri, counties, db)
+    logging.info("Finished Inferring CRS")
+
+
+def production():
+    """Run pipeline."""
+    logging.info("Logging model URIs")
+    db = Database()
+    if not os.path.exists("inference.db"):
+        models = identify_models("s3://fim/mip_30/source_models/")
+        db.log_models(models)
+        models = identify_models("s3://fim/mip_70/source_models/")
+        db.log_models(models)
+
+    logging.info("Beginning CRS inference")
+    workers = max((os.cpu_count() - 1), 1)
+    # workers = 1
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        results = []
+        for geom_uri, counties in db.models[:1000]:
+            results.append(executor.submit(process_runner, geom_uri, counties, db))
+            time.sleep(1)
+        for future in concurrent.futures.as_completed(results):
+            try:
+                geom_uri = future.result()
+            except Exception as exc:
+                logging.error(str(exc))
+            else:
+                logging.info(f"Finished {geom_uri}")
     logging.info("Finished Inferring CRS")
 
 
@@ -256,61 +290,5 @@ def generate_qc():
     )
 
 
-def worker_system_stats(idx: str, geom_uri: str):
-    """Print out some system level stats for logging."""
-    logging.info(f"{idx} working on {geom_uri}")
-    logging.info(psutil.cpu_percent())
-    logging.info(psutil.virtual_memory())
-    logging.info(f"{round(psutil.virtual_memory()[2], 2)}% memory used")
-
-
-def production_worker():
-    """Queue processing."""
-    idx = str(uuid4())
-    logging.info("Starting new worker")
-    db = Database()
-    i = db.get_model()
-    while len(i) != 0:
-        geom_uri, counties = i[0]
-        db.log_status(geom_uri, "Processing")
-        worker_system_stats(idx, geom_uri)
-        t1 = time.perf_counter()
-        process_runner(geom_uri, counties, db)
-        t2 = time.perf_counter()
-        logging.info(f"finished {geom_uri} in {round(t2 - t1, 2)} seconds")
-        i = db.get_model()
-
-
-def production():
-    """Run pipeline."""
-    logging.info("Logging model URIs")
-    if not os.path.exists("inference.db"):
-        db = Database()
-        models = identify_models("s3://fim/mip_30/source_models/")
-        db.log_models(models)
-        models = identify_models("s3://fim/mip_70/source_models/")
-        db.log_models(models)
-
-    logging.info("Beginning CRS inference")
-    workers = 6
-    with ProcessPoolExecutor(max_workers=workers) as executor:
-        results = []
-        for i in range(workers):
-            results.append(executor.submit(production_worker))
-            time.sleep(1)
-        for future in concurrent.futures.as_completed(results):
-            try:
-                data = future.result()
-            except Exception as exc:
-                logging.error(str(exc))
-            else:
-                logging.info("Worker finished queue")
-    logging.info("Finished Inferring CRS")
-
-
-# generate_qc()
-# debug_single("s3://fim/mip_70/source_models/15-07-0898S_4dec2ac1d197847a2e0e16752e477022568642d7/07100008001847.g01")
 if __name__ == "__main__":
-    # uri = sys.argv[1]
-    # main(uri)
     production()

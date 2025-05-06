@@ -221,16 +221,20 @@ class TransformerCache:
 
     def __new__(cls):
         if cls._instance is None:
-            logging.info("Creating transformer cache.  This may take a while.")
             cls._instance = super().__new__(cls)
             crs_gdf = get_ras_crs()
             cls.transformers = {}
+            cls.pipelines = {}
             for ind, r in crs_gdf.iterrows():
                 name = f"{r.auth_name}:{r.code}"
-                from_crs = CRS(name)
-                cls.transformers[name] = Transformer.from_crs(from_crs, LATENT_CRS, always_xy=True)
+                cls.pipelines[name] = r.proj4
         return cls._instance
 
     def transform(self, geometry: BaseGeometry, crs: str) -> BaseGeometry:
         """Use a cached transform to transform a geometry."""
+        if crs not in self.transformers:
+            pipeline = self.pipelines[crs]
+            if pipeline is None or pipeline == "+proj=noop":
+                return geometry
+            self.transformers[crs] = Transformer.from_pipeline(pipeline)
         return shapely.ops.transform(self.transformers[crs].transform, geometry)
