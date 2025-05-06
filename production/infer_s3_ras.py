@@ -174,7 +174,7 @@ def process_model(geom_uri: str, counties: str, db: Database, debug: bool = Fals
     geom.validate()
 
     # Load target
-    target = CountyTargetCache.instance().get_county_target(counties)
+    target = CountyTargetCache().create_target(counties)
 
     # Infer CRS
     logging.info(f"Inferring CRS for geometry at {geom_uri}")
@@ -274,7 +274,10 @@ def production_worker():
         geom_uri, counties = i[0]
         db.log_status(geom_uri, "Processing")
         worker_system_stats(idx, geom_uri)
+        t1 = time.perf_counter()
         process_runner(geom_uri, counties, db)
+        t2 = time.perf_counter()
+        logging.info(f"finished {geom_uri} in {round(t2 - t1, 2)} seconds")
         i = db.get_model()
 
 
@@ -289,7 +292,7 @@ def production():
         db.log_models(models)
 
     logging.info("Beginning CRS inference")
-    workers = 1
+    workers = 6
     with ProcessPoolExecutor(max_workers=workers) as executor:
         results = []
         for i in range(workers):

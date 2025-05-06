@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import sys
 import warnings
 from functools import cached_property
 
@@ -13,7 +14,7 @@ from shapely.geometry import MultiLineString, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from crs_inference.consts import LATENT_CRS
-from crs_inference.errors import EmptyGeometryError, HTMLDownloadError
+from crs_inference.errors import EmptyGeometryError, HTMLDownloadError, OutOfMemoryError
 from crs_inference.ras import Reach, search_contents
 from crs_inference.utils import count_intersections, get_ras_crs, get_s3_content
 
@@ -84,7 +85,7 @@ class Geometry:
         authorities = []
         codes = []
         geoms = []
-        transform_caches = TransformerCache.instance()
+        transform_caches = TransformerCache()
         for crs in crs_list:
             projected_geom = transform_caches.transform(self.geometry, crs)
             if projected_geom.is_valid:
@@ -169,6 +170,8 @@ class RasGeometry(Geometry):
                 raise HTMLDownloadError()
             else:
                 raise EmptyGeometryError()
+        if sys.getsizeof(self.contents) > 1000000:
+            raise OutOfMemoryError(sys.getsizeof(self.contents))
 
 
 class CountyTargetCache:
@@ -176,15 +179,11 @@ class CountyTargetCache:
 
     _instance = None
 
-    def __init__(self):
-        raise RuntimeError("Call instance() instead")
-
-    @classmethod
-    def instance(cls):
+    def __new__(cls):
         if cls._instance is None:
-            cls._instance = cls.__new__(cls)
-            cls.gdf = gpd.read_file("crs_inference/data/counties.gpkg", layer="counties")
-            cls.cache = {}
+            cls._instance = super().__new__(cls)
+            cls._instance.gdf = gpd.read_file("crs_inference/data/counties.gpkg", layer="counties")
+            cls._instance.cache = {}
         return cls._instance
 
     def create_target(self, county: str | list) -> Target:
@@ -210,6 +209,7 @@ class CountyTargetCache:
 
         if idx_str not in self.cache:
             self.cache[idx_str] = self.create_target(county)
+            logging.info(f"Target cache has size {len(self.cache)}")
 
         return self.cache[idx_str]
 
@@ -219,14 +219,10 @@ class TransformerCache:
 
     _instance = None
 
-    def __init__(self):
-        raise RuntimeError("Call instance() instead")
-
-    @classmethod
-    def instance(cls):
+    def __new__(cls):
         if cls._instance is None:
             logging.info("Creating transformer cache.  This may take a while.")
-            cls._instance = cls.__new__(cls)
+            cls._instance = super().__new__(cls)
             crs_gdf = get_ras_crs()
             cls.transformers = {}
             for ind, r in crs_gdf.iterrows():
