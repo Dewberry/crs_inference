@@ -14,9 +14,8 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import psutil
-from pyproj import CRS
 
-from crs_inference.data_models import CountyTargetCache, RasGeometry
+from crs_inference.data_models import CountyTargetCache, RasGeometry, TransformerCache
 from crs_inference.utils import (
     find_metadata,
     get_json_boto3,
@@ -235,9 +234,9 @@ def production():
     # workers = 1
     with ProcessPoolExecutor(max_workers=workers) as executor:
         results = []
-        for geom_uri, counties in db.models[:1000]:
+        for geom_uri, counties in db.models:
             results.append(executor.submit(process_runner, geom_uri, counties, db))
-            time.sleep(1)
+            time.sleep(0.1)
         for future in concurrent.futures.as_completed(results):
             try:
                 geom_uri = future.result()
@@ -271,24 +270,47 @@ def debug_single(geom_uri: str):
     print(f"COUNTIES: {counties}")
 
 
-def generate_qc():
-    """Make a QC layer for results."""
-    db = Database()
-    geom_uris = []
-    crss = []
-    geoms = []
-    for geom_uri, counties, crs in db.models_w_crs:
-        geom = RasGeometry.from_s3(geom_uri)
-        from_crs = CRS(crs)
-        to_crs = CRS("EPSG:4326")
-        projected = geom.reproject(from_crs, to_crs)
-        geom_uris.append(geom_uri)
-        crss.append(crs)
-        geoms.append(projected)
-    gpd.GeoDataFrame({"geom_uri": geom_uris, "CRS": crss, "geometry": geoms}, crs="EPSG:4326").to_file(
-        "inference_qc.gpkg"
+def qc_worker(geom_uri, crs):
+    out_path = "inference_qc.gpkg"
+    trans_cache = TransformerCache()
+    geom = RasGeometry.from_s3(geom_uri)
+    projected_geom = trans_cache.transform(geom.geometry, crs)
+    gpd.GeoDataFrame({"geom_uri": [geom_uri], "CRS": [crs], "geometry": [projected_geom]}, crs="EPSG:4326").to_file(
+        out_path, mode="a"
     )
 
 
+def generate_qc():
+    """Make a QC layer for results."""
+    out_path = "inference_qc.gpkg"
+    # if os.path.exists(out_path):
+    #     os.remove(out_path)
+
+    db = Database()
+    models = db.models_w_crs
+    with sqlite3.connect(out_path) as con:
+        cur = con.cursor()
+        cur.execute("SELECT geom_uri FROM inference_qc")
+        already_processed = [i[0] for i in cur.fetchall()]
+    models = [i for i in models if i[0] not in already_processed]
+    workers = max((os.cpu_count() - 1), 1)
+    print("Starting QC generation")
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        results = []
+        for geom_uri, _, crs in models:
+            results.append(executor.submit(qc_worker, geom_uri, crs))
+        counter = 0
+        for future in concurrent.futures.as_completed(results):
+            try:
+                geom_uri = future.result()
+            except Exception as exc:
+                print(str(exc))
+            counter += 1
+            if counter % 100 == 0:
+                print(f"{counter} / {len(models)}")
+    print("done")
+
+
 if __name__ == "__main__":
+    # generate_qc()
     production()
