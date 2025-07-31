@@ -6,17 +6,17 @@ import os
 import sys
 import warnings
 from functools import cached_property
+from pathlib import Path
 
 import geopandas as gpd
 import shapely
-from pyproj import CRS, Transformer
-from shapely.geometry import MultiLineString, Polygon
-from shapely.geometry.base import BaseGeometry
-
 from crs_inference.consts import LATENT_CRS
 from crs_inference.errors import EmptyGeometryError, HTMLDownloadError, OutOfMemoryError
 from crs_inference.ras import Reach, search_contents
 from crs_inference.utils import count_intersections, get_ras_crs, get_s3_content
+from pyproj import CRS, Transformer
+from shapely.geometry import MultiLineString, Polygon
+from shapely.geometry.base import BaseGeometry
 
 warnings.filterwarnings("ignore", module="pyogrio")
 
@@ -182,7 +182,8 @@ class CountyTargetCache:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.gdf = gpd.read_file("crs_inference/data/counties.gpkg", layer="counties")
+            counties_gpkg_path = Path(__file__).parent.joinpath("data/counties.gpkg")
+            cls._instance.gdf = gpd.read_file(counties_gpkg_path, layer="counties")
             cls._instance.cache = {}
         return cls._instance
 

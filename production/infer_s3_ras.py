@@ -14,7 +14,6 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import psutil
-
 from crs_inference.data_models import CountyTargetCache, RasGeometry, TransformerCache
 from crs_inference.utils import (
     find_metadata,
@@ -222,12 +221,14 @@ def main(uri: str):
 def production():
     """Run pipeline."""
     logging.info("Logging model URIs")
-    db = Database()
     if not os.path.exists("inference.db"):
+        db = Database()
         models = identify_models("s3://fim/mip_30/source_models/")
         db.log_models(models)
         models = identify_models("s3://fim/mip_70/source_models/")
         db.log_models(models)
+    else:
+        db = Database()
 
     logging.info("Beginning CRS inference")
     workers = max((os.cpu_count() - 1), 1)

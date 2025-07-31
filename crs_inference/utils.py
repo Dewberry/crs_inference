@@ -2,6 +2,7 @@ import json
 import os
 import re
 from functools import lru_cache
+from pathlib import Path
 from urllib.parse import urlparse
 
 import boto3
@@ -13,13 +14,15 @@ from obstore.store import S3Store
 @lru_cache
 def get_ras_crs() -> list:
     """Load the HEC-RAS db and convert all crs to pyproj crs."""
-    return gpd.read_file("crs_inference/data/proj.gpkg")
+    proj_gpkg_path = Path(__file__).parent.joinpath("data/proj.gpkg")
+    return gpd.read_file(proj_gpkg_path)
 
 
 @lru_cache
 def load_counties():
     """Load the county geopackage."""
-    return gpd.read_file("crs_inference/data/counties.gpkg", layer="counties")
+    counties_gpkg_path = Path(__file__).parent.joinpath("data/counties.gpkg")
+    return gpd.read_file(counties_gpkg_path, layer="counties")
 
 
 def count_intersections(geom):

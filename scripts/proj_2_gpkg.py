@@ -1,11 +1,14 @@
 import sqlite3
+from pathlib import Path
 
 import geopandas as gpd
 from pyproj import CRS, Transformer
 from pyproj.exceptions import CRSError, ProjError
 from shapely.geometry import box
 
-with sqlite3.connect("crs_inference/data/proj.db") as con:
+proj_db_path = Path(__file__).parent.joinpath("data/proj.db")
+proj_gpkg_path = Path(__file__).parent.joinpath("data/proj.gpkg")
+with sqlite3.connect(proj_db_path) as con:
     cur = con.cursor()
     cur.execute("SELECT auth_name, code FROM crs_view")
     all_crs = cur.fetchall()
@@ -27,4 +30,4 @@ for auth_name, code in all_crs:
         print(e)
 
 
-gpd.GeoDataFrame(dicts, crs="epsg:4326").to_file("crs_inference/data/proj.gpkg")
+gpd.GeoDataFrame(dicts, crs="epsg:4326").to_file(proj_gpkg_path)
