@@ -1,21 +1,13 @@
-FROM ubuntu:latest
-
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates python3.12 python3.12-venv python3-pip
+FROM python:3.12-slim
 
 WORKDIR /process
 
-# Install UV
-ADD https://astral.sh/uv/install.sh /uv-installer.sh
-RUN sh /uv-installer.sh && rm /uv-installer.sh
-ENV PATH="/root/.local/bin/:$PATH"
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install python dependencies
 COPY pyproject.toml uv.lock ./
-RUN uv venv .venv
-RUN uv sync --frozen --no-install-project
+RUN uv sync --frozen --no-install-project --extra ops
 
-# Copy project files
-COPY . .
+COPY crs_inference/ crs_inference/
+COPY pyproject.toml README.md ./
 
-# Install the app
-RUN uv pip install -e .
+RUN uv pip install --no-deps -e .

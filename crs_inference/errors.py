@@ -15,8 +15,8 @@ class HTMLDownloadError(Exception):
         super().__init__("Download contained '<html>' tag indicating a bad download.")
 
 
-class OutOfMemoryError(Exception):
-    """Raised when a geometry might consume too much memory when reprojected many times."""
+class ModelTooLargeError(Exception):
+    """Raised when a geometry file exceeds the size limit."""
 
     def __init__(self, size: int):
-        super().__init__(f"Geometry had size {size / 1e6} MB.")
+        super().__init__(f"Geometry file had size {size / 1e6:.1f} MB, which exceeds the limit.")
