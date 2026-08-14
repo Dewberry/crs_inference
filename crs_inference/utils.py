@@ -34,9 +34,9 @@ def count_intersections(geom):
 ### S3 Utilities ###
 
 
+@lru_cache(maxsize=1)
 def init_s3_resources() -> tuple:
     """Establish a boto3 (AWS) session and return the session, S3 client, and S3 resource handles."""
-    # Instantitate S3 resources
     session = boto3.Session(
         aws_access_key_id=os.environ.get("aws_access_key_id"),
         aws_secret_access_key=os.environ.get("aws_secret_access_key"),
@@ -103,15 +103,15 @@ def search_s3_boto3(uri: str, regex_str: str) -> list:
     # Parse uri
     bucket, prefix = split_uri(uri)
 
-    # Compile a regex for ".g##" where # is 0-9
-    pattern = re.compile(regex_str)
+    # Compile a regex for ".g##" where # is 0-9 (case-insensitive for mixed-case filenames)
+    pattern = re.compile(regex_str, re.IGNORECASE)
 
     # Search
     results = []
     kwargs = {"Bucket": bucket, "Prefix": prefix}
     while True:
         resp = s3_client.list_objects_v2(**kwargs)
-        results += [obj["Key"] for obj in resp["Contents"] if pattern.search(obj["Key"])]
+        results += [obj["Key"] for obj in resp.get("Contents", []) if pattern.search(obj["Key"])]
         try:
             kwargs["ContinuationToken"] = resp["NextContinuationToken"]
         except KeyError:

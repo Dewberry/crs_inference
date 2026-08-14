@@ -30,27 +30,26 @@ class Target:
         self.crs = LATENT_CRS
         if crs != self.crs:
             transformer = Transformer.from_crs(crs, self.crs, always_xy=True)
-            geometry = shapely.ops.transform(transformer.transform, self.geometry)
+            geometry = shapely.ops.transform(transformer.transform, geometry)
         self.geometry = geometry
-        self.intersect_df = self.intersect_crs()
-
-    def intersect_crs(self):
-        """Find crs that are applicable in this area."""
-        ras_crs = get_ras_crs()
+        # Compute projection lists once and discard the GDF to avoid holding a
+        # 2.6 MB copy per cached county.
+        ras_crs = get_ras_crs().copy()
         ras_crs["local"] = ras_crs.geometry.intersects(self.geometry)
-        return ras_crs
+        local = ras_crs[ras_crs["local"]][["auth_name", "code"]].values
+        non_local = ras_crs[~ras_crs["local"]][["auth_name", "code"]].values
+        self._local_projections: list[str] = [f"{a}:{c}" for a, c in local]
+        self._non_local_projections: list[str] = [f"{a}:{c}" for a, c in non_local]
 
     @property
     def local_projections(self) -> list[CRS]:
         """Get CRS with area of use containing the geometry."""
-        local_projections = self.intersect_df[self.intersect_df["local"]][["auth_name", "code"]].values
-        return [f"{i}:{j}" for i, j in local_projections]
+        return self._local_projections
 
     @property
     def non_local_projections(self) -> list[CRS]:
         """Get CRS with area of use containing the geometry."""
-        non_local_projections = self.intersect_df[~self.intersect_df["local"]][["auth_name", "code"]].values
-        return [f"{i}:{j}" for i, j in non_local_projections]
+        return self._non_local_projections
 
 
 class Geometry:
@@ -86,7 +85,7 @@ class Geometry:
         codes = []
         geoms = []
         transform_caches = TransformerCache()
-        for crs in crs_list:
+        for ind, crs in enumerate(crs_list):
             projected_geom = transform_caches.transform(self.geometry, crs)
             if projected_geom.is_valid:
                 overlap = projected_geom.intersection(target.geometry).length / projected_geom.length
@@ -140,7 +139,7 @@ class RasGeometry(Geometry):
         """Load a geometry file from a local file."""
         logger.info(f"Loading RAS geometry at {href}")
         with open(href) as f:
-            contents = f.read().splitlines()
+            contents = f.read()
 
         return cls(contents)
 
@@ -170,7 +169,7 @@ class RasGeometry(Geometry):
                 raise HTMLDownloadError()
             else:
                 raise EmptyGeometryError()
-        if sys.getsizeof(self.contents) > 1000000:
+        if sys.getsizeof(self.contents) > 1e10:
             raise OutOfMemoryError(sys.getsizeof(self.contents))
 
 
@@ -201,7 +200,7 @@ class CountyTargetCache:
     def get_county_target(self, county: str | list) -> Target:
         """Get or create a Target for a county."""
         if isinstance(county, list):
-            idx_str = json.dumps(county)
+            idx_str = json.dumps(sorted(county))
         elif isinstance(county, str):
             idx_str = county
         else:

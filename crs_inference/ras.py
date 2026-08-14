@@ -13,7 +13,7 @@ def search_contents(lines: list, search_string: str, token: str = "=", expect_on
     results = []
     for line in lines:
         if f"{search_string}{token}" in line:
-            results.append(line.split(token)[1])
+            results.append(token.join(line.split(token)[1:]))
 
     if expect_one and len(results) > 1:
         raise ValueError(f"expected 1 result, got {len(results)}")
@@ -75,7 +75,7 @@ def handle_spaces(line: str, lines: list[str]):
     """Handle spaces in the line."""
     if line in lines:
         return line
-    elif handle_spaces_arround_equals(line.rstrip(" "), lines):
+    elif handle_spaces_arround_equals(line.rstrip(" "), lines) in lines:
         return handle_spaces_arround_equals(line.rstrip(" "), lines)
     elif handle_spaces_arround_equals(line + " ", lines) in lines:
         return handle_spaces_arround_equals(line + " ", lines)
