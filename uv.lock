@@ -524,7 +524,7 @@ wheels = [
 
 [[package]]
 name = "crs-inference"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "boto3" },
     { name = "geopandas" },
