@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: ./backend
+    networks:
+      - internal
+    environment:
+      PYTHONUNBUFFERED: "1"
+    # Volumes for local development — remove in production
+    # volumes:
+    #   - ./backend/src:/app/src
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    networks:
+      - internal
+    depends_on:
+      - backend
+
+networks:
+  internal:
+    driver: bridge

@@ -73,6 +73,12 @@ dev/
 **/.DS_Store
 Thumbs.db
 
+# crs-finder web application
+crs-finder/frontend/node_modules/
+crs-finder/frontend/dist/
+crs-finder/frontend/.vite/
+crs-finder/backend/.venv/
+
 # Editors
 .vscode/
 .idea/
