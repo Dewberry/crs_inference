@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from crs_finder.api.health import router as health_router
+from crs_finder.api.infer import router as infer_router
 
 app = FastAPI(
     title="CRS Finder",
@@ -22,3 +23,4 @@ app.add_middleware(
 )
 
 app.include_router(health_router, prefix="/api")
+app.include_router(infer_router, prefix="/api")

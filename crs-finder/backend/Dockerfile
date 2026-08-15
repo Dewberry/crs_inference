@@ -2,13 +2,20 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install dependencies before copying source so this layer is cached
-COPY pyproject.toml .
-RUN mkdir -p src/crs_finder && touch src/crs_finder/__init__.py \
-    && pip install --no-cache-dir . \
-    && rm -rf src/crs_finder/__init__.py
+# Install crs-inference (root library) — cached unless root pyproject/sources change
+COPY pyproject.toml ./
+COPY crs_inference/ ./crs_inference/
+RUN pip install --no-cache-dir .
 
-COPY src/ src/
+# Install backend app dependencies — cached unless backend pyproject.toml changes
+COPY crs-finder/backend/pyproject.toml ./backend/
+RUN mkdir -p backend/src/crs_finder && touch backend/src/crs_finder/__init__.py \
+    && pip install --no-cache-dir ./backend/ \
+    && rm -f backend/src/crs_finder/__init__.py
+
+COPY crs-finder/backend/src/ ./backend/src/
+
+ENV PYTHONPATH=/app/backend/src
 
 EXPOSE 8000
 
