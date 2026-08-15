@@ -1,0 +1,22 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: crs-inference
+  title: crs-inference
+  description: Automatically infers the Coordinate Reference System (CRS/EPSG code) for geometries that lack explicit CRS metadata, with primary support for HEC-RAS hydraulic models.
+  tags:
+    - python
+    - hec-ras
+    - geospatial
+    - coordinate-reference-system
+    - flood-inundation
+  annotations:
+    github.com/project-slug: Dewberry/crs_inference
+  links:
+    - url: https://github.com/Dewberry/crs_inference
+      title: GitHub
+spec:
+  type: library
+  lifecycle: experimental
+  owner: dewberry
+  system: flood-inundation-mapping
