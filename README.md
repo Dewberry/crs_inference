@@ -27,17 +27,17 @@ from crs_inference import infer_crs, RasParser, Target
 # Parse a HEC-RAS geometry file
 parser = RasParser.from_file("path/to/model.g01")
 parser.validate()
-geometry = parser.parse()          # returns a Shapely MultiLineString
+geometry = parser.parse()  # returns a Shapely MultiLineString
 
 # Build a target using a US county FIPS code
-target = Target.from_county("50007")   # Chittenden County, VT
+target = Target.from_county("50007")  # Chittenden County, VT
 
 # Infer the CRS
 result = infer_crs(geometry, target)
 
-print(result.crs)           # e.g. "EPSG:5646"
-print(result.confidence)    # overlap fraction, e.g. 0.97
-print(result.method)        # "local" | "non_local" | "none"
+print(result.crs)  # e.g. "EPSG:5646"
+print(result.confidence)  # overlap fraction, e.g. 0.97
+print(result.method)  # "local" | "non_local" | "none"
 ```
 
 You can also build a target from a bounding box or any Shapely geometry:

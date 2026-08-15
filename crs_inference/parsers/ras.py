@@ -59,7 +59,7 @@ def _text_block_from_start_end_str(
     start_str = _handle_spaces(start_str, lines)
     start_index = lines.index(start_str)
     end_index = len(lines)
-    for line in lines[start_index + 1:]:
+    for line in lines[start_index + 1 :]:
         if end_index != len(lines):
             break
         for end_str in end_strs:
@@ -90,8 +90,8 @@ def _data_pairs_from_text_block(lines: list[str], width: int) -> list[tuple[floa
     pairs = []
     for line in lines:
         for i in range(0, len(line), width):
-            x = line[i: int(i + width / 2)]
-            y = line[int(i + width / 2): int(i + width)]
+            x = line[i : int(i + width / 2)]
+            y = line[int(i + width / 2) : int(i + width)]
             pairs.append((float(x), float(y)))
     return pairs
 
@@ -100,9 +100,7 @@ class _Reach:
     """One river reach parsed from a HEC-RAS geometry file."""
 
     def __init__(self, ras_data: list, river_reach: str):
-        reach_lines = _text_block_from_start_end_str(
-            f"River Reach={river_reach}", ["River Reach"], ras_data, -1
-        )
+        reach_lines = _text_block_from_start_end_str(f"River Reach={river_reach}", ["River Reach"], ras_data, -1)
         self.ras_data = reach_lines
         self.river_reach = river_reach
         self.river = river_reach.split(",")[0].rstrip()
@@ -150,6 +148,7 @@ class RasParser:
     def from_s3(cls, uri: str) -> "RasParser":
         """Build a RasParser by downloading a file from S3."""
         from crs_inference.loaders.s3 import get_s3_content
+
         return cls(get_s3_content(uri))
 
     def validate(self) -> None:

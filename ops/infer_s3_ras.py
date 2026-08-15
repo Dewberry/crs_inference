@@ -76,6 +76,7 @@ def load_models_from_csv(csv_path: str, limit: int | None = None, db: Database |
     logger.info(f"Loaded {len(models)} models from {path.name}")
     return models
 
+
 def _process_meta(meta_uri: str) -> tuple[str | None, str | None]:
     """Extract geometry URI and county from a MIP metadata file."""
     metadata = get_json_s3(meta_uri)
@@ -190,8 +191,7 @@ def production() -> None:
     workers = max(os.cpu_count() - 1, 1)
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(process_runner, geom_uri, counties, db): geom_uri
-            for geom_uri, counties in db.models
+            executor.submit(process_runner, geom_uri, counties, db): geom_uri for geom_uri, counties in db.models
         }
         for future in concurrent.futures.as_completed(futures):
             try:

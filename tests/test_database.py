@@ -1,4 +1,3 @@
-
 from shapely.geometry import Point
 
 from crs_inference.database import CRSDatabase

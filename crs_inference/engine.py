@@ -34,9 +34,7 @@ class CRSInferenceEngine:
             return local_result
         return self._score(geometry, target, target.non_local_projections)
 
-    def _score(
-        self, geometry: BaseGeometry, target: Target, crs_list: list[str]
-    ) -> InferenceResult:
+    def _score(self, geometry: BaseGeometry, target: Target, crs_list: list[str]) -> InferenceResult:
         """Score each CRS in crs_list and return the best result."""
         rows = []
         for crs in crs_list:
@@ -45,17 +43,17 @@ class CRSInferenceEngine:
                 continue
             overlap = projected.intersection(target.geometry).length / projected.length
             auth, code = crs.split(":", 1)
-            rows.append({
-                "authority": auth,
-                "code": code,
-                "overlap_pct": round(overlap, 4),
-                "geometry": projected,
-            })
+            rows.append(
+                {
+                    "authority": auth,
+                    "code": code,
+                    "overlap_pct": round(overlap, 4),
+                    "geometry": projected,
+                }
+            )
 
         if not rows:
-            return InferenceResult(
-                crs=None, confidence=0.0, method="none", candidates=gpd.GeoDataFrame()
-            )
+            return InferenceResult(crs=None, confidence=0.0, method="none", candidates=gpd.GeoDataFrame())
 
         candidates = gpd.GeoDataFrame(rows, crs=LATENT_CRS)
         candidates.sort_values(["overlap_pct", "code"], ascending=[False, True], inplace=True)

@@ -20,6 +20,7 @@ def test_infer_result_is_inference_result():
 
 def test_infer_returns_none_for_garbage_geometry():
     from shapely.geometry import LineString
+
     # Coordinates that don't project sensibly into any local CRS for NC
     geom = LineString([(1e12, 1e12), (1e12 + 1, 1e12 + 1)])
     target = Target.from_bbox(-81.5, 34.5, -79.5, 36.5)
@@ -31,6 +32,7 @@ def test_infer_returns_none_for_garbage_geometry():
 
 def test_infer_candidates_is_geodataframe():
     from shapely.geometry import LineString
+
     geom = LineString([(481000, 234000), (482000, 234500)])
     target = Target.from_bbox(-81.5, 34.5, -79.5, 36.5)
     engine = CRSInferenceEngine()

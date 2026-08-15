@@ -35,6 +35,7 @@ def test_validate_raises_empty_geometry():
 def test_validate_raises_html_download_error():
     parser = RasParser.from_string("<html><body>Access Denied</body></html>")
     from crs_inference.errors import HTMLDownloadError
+
     with pytest.raises(HTMLDownloadError):
         parser.validate()
 
