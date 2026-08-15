@@ -1,13 +1,80 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
+*.so
+*.pyd
+*.egg
+*.egg-info/
 build/
 dist/
 wheels/
-*.egg-info
+__pypackages__/
+MANIFEST
 
 # Virtual environments
 .venv
+venv/
+.python-version
 
-# Environment
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+.tox/
+
+# Type checkers & linters
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment & secrets
 .env
+.env.*
+!.env.example
+
+# Geospatial data (large files not for version control)
+*.gpkg
+*.fgb
+*.hdf
+*.h5
+*.nc
+*.tif
+*.tiff
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.sbn
+*.sbx
+*.xml
+*.db
+*.sqlite
+
+# Unignore bundled data shipped with the package
+!crs_inference/data/*.gpkg
+
+# Logs & caches
+*.log
+cache/
+
+# Project-specific working directories
+projects/
+dev/
+
+# OS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo

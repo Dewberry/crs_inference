@@ -1,0 +1,14 @@
+.venv/
+cache/
+*.db
+*.sqlite
+*.log
+*.gpkg
+*.fgb
+*.hdf
+projects/
+dev/
+winooski/
+.git/
+.github/
+design/
