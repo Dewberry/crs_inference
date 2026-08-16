@@ -32,18 +32,20 @@ interface County {
 
 type TargetTab = "file" | "county";
 
+type Counties = County[];
+
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 async function runInference(
   rasFile: File,
-  target: { file: File } | { countyFips: string },
+  target: { file: File } | { countyFips: string[] },
 ): Promise<InferResult> {
   const form = new FormData();
   form.append("geometry_file", rasFile);
   if ("file" in target) {
     form.append("target_file", target.file);
   } else {
-    form.append("county_fips", target.countyFips);
+    form.append("county_fips", target.countyFips.join(","));
   }
   const res = await fetch("/api/infer", { method: "POST", body: form });
   if (!res.ok) {
@@ -207,66 +209,98 @@ function CountySearch({
   value,
   onChange,
 }: {
-  value: County | null;
-  onChange: (c: County | null) => void;
+  value: Counties;
+  onChange: (c: Counties) => void;
 }) {
-  const [geoid, setGeoid] = useState(value?.geoid ?? "");
+  const [geoid, setGeoid] = useState("");
   const [notFound, setNotFound] = useState(false);
+  const [pending, setPending] = useState<County | null>(null);
 
   // Look up county whenever a complete 5-digit GEOID is entered
   useEffect(() => {
-    if (geoid.length !== 5) { onChange(null); setNotFound(false); return; }
+    if (geoid.length !== 5) { setPending(null); setNotFound(false); return; }
     let cancelled = false;
     fetch(`/api/counties/${geoid}`)
       .then((res) => {
         if (cancelled) return;
-        if (res.ok) { res.json().then(onChange); setNotFound(false); }
-        else { onChange(null); setNotFound(true); }
+        if (res.ok) { res.json().then((c: County) => { setPending(c); setNotFound(false); }); }
+        else { setPending(null); setNotFound(true); }
       })
-      .catch(() => { if (!cancelled) { onChange(null); setNotFound(false); } });
+      .catch(() => { if (!cancelled) { setPending(null); setNotFound(false); } });
     return () => { cancelled = true; };
-  }, [geoid, onChange]);
+  }, [geoid]);
 
-  const borderClass = value
-    ? "border-primary/60 bg-accent/20"
-    : notFound
-      ? "border-destructive/60"
-      : "";
+  const addCounty = useCallback(() => {
+    if (!pending || value.some((c) => c.geoid === pending.geoid)) return;
+    onChange([...value, pending]);
+    setGeoid("");
+    setPending(null);
+  }, [pending, value, onChange]);
+
+  const removeCounty = useCallback((geoid: string) => {
+    onChange(value.filter((c) => c.geoid !== geoid));
+  }, [value, onChange]);
+
+  const alreadyAdded = pending ? value.some((c) => c.geoid === pending.geoid) : false;
 
   return (
-    <div>
-      <p className="text-xs font-medium text-foreground mb-1.5">County GEOID</p>
-      <div className="relative">
-        <input
-          className={[
-            "w-full rounded-lg border bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground",
-            "focus:outline-none focus:ring-1 focus:ring-primary transition-colors",
-            value ? "pr-8 " : "",
-            borderClass,
-          ].join(" ")}
-          placeholder="5-digit FIPS (e.g. 50007)"
-          maxLength={5}
-          value={geoid}
-          onChange={(e) => setGeoid(e.target.value.replace(/\D/g, ""))}
-        />
-        {value && (
-          <button
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => { setGeoid(""); onChange(null); setNotFound(false); }}
-          >
-            <XCircle className="h-3.5 w-3.5" />
-          </button>
-        )}
+    <div className="flex flex-col gap-2">
+      <p className="text-xs font-medium text-foreground">County GEOIDs</p>
+
+      {value.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {value.map((c) => (
+            <div key={c.geoid} className="flex items-center justify-between rounded-lg border border-primary/40 bg-accent/20 px-2.5 py-1.5">
+              <div className="min-w-0">
+                <span className="text-xs font-mono font-medium">{c.geoid}</span>
+                <span className="text-[11px] text-muted-foreground ml-1.5">{c.name}, {c.state}</span>
+              </div>
+              <button
+                className="ml-2 shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => removeCounty(c.geoid)}
+              >
+                <XCircle className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-1.5">
+        <div className="relative flex-1">
+          <input
+            className={[
+              "w-full rounded-lg border bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground",
+              "focus:outline-none focus:ring-1 focus:ring-primary transition-colors",
+              notFound ? "border-destructive/60" : pending ? "border-primary/60" : "",
+            ].join(" ")}
+            placeholder="5-digit FIPS (e.g. 50007)"
+            maxLength={5}
+            value={geoid}
+            onChange={(e) => setGeoid(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => e.key === "Enter" && addCounty()}
+          />
+        </div>
+        <button
+          className="shrink-0 rounded-lg border bg-secondary px-2.5 py-1 text-xs font-medium transition-colors hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={!pending || alreadyAdded}
+          onClick={addCounty}
+        >
+          Add
+        </button>
       </div>
 
-      {value && (
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          <span className="font-medium text-foreground">{value.name}</span>
-          {" · "}{value.state}
+      {pending && !alreadyAdded && (
+        <p className="text-[11px] text-muted-foreground">
+          <span className="font-medium text-foreground">{pending.name}</span>
+          {" · "}{pending.state}
         </p>
       )}
+      {alreadyAdded && (
+        <p className="text-[11px] text-muted-foreground">Already added</p>
+      )}
       {notFound && (
-        <p className="mt-1.5 text-[11px] text-destructive">GEOID not found</p>
+        <p className="text-[11px] text-destructive">GEOID not found</p>
       )}
     </div>
   );
@@ -424,9 +458,9 @@ export default function App() {
   const [rasFile, setRasFile] = useState<File | null>(null);
   const [targetTab, setTargetTab] = useState<TargetTab>("file");
   const [targetFile, setTargetFile] = useState<File | null>(null);
-  const [selectedCounty, setSelectedCounty] = useState<County | null>(null);
+  const [selectedCounties, setSelectedCounties] = useState<Counties>([]);
 
-  const targetReady = targetTab === "file" ? targetFile !== null : selectedCounty !== null;
+  const targetReady = targetTab === "file" ? targetFile !== null : selectedCounties.length > 0;
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -434,7 +468,7 @@ export default function App() {
         rasFile!,
         targetTab === "file"
           ? { file: targetFile! }
-          : { countyFips: selectedCounty!.geoid },
+          : { countyFips: selectedCounties.map((c) => c.geoid) },
       ),
     onSuccess: () => setShowAllCandidates(false),
   });
@@ -501,7 +535,7 @@ export default function App() {
                   onChange={setTargetFile}
                 />
               ) : (
-                <CountySearch value={selectedCounty} onChange={setSelectedCounty} />
+                <CountySearch value={selectedCounties} onChange={setSelectedCounties} />
               )}
             </div>
           </div>

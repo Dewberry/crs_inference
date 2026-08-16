@@ -99,8 +99,9 @@ async def infer(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if county_fips is not None:
+        fips_list = [f.strip() for f in county_fips.split(",") if f.strip()]
         try:
-            target = Target.from_county(county_fips.strip())
+            target = Target.from_county(fips_list if len(fips_list) > 1 else fips_list[0])
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Could not build target from FIPS '{county_fips}': {exc}") from exc
     else:
