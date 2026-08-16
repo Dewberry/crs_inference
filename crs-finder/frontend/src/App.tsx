@@ -215,6 +215,9 @@ function DropZone({ label, hint, accept, file, onChange }: DropZoneProps) {
             <span className="text-[11px] text-muted-foreground">
               {(file.size / 1024).toFixed(1)} KB
             </span>
+            {file.size > 100 * 1024 * 1024 && (
+              <span className="text-[11px] text-yellow-600 text-center">Large file — inference may take several minutes.</span>
+            )}
           </>
         ) : (
           <>
@@ -280,15 +283,18 @@ function CountySearch({
   // Look up county whenever a complete 5-digit GEOID is entered
   useEffect(() => {
     if (geoid.length !== 5) { setPending(null); setNotFound(false); return; }
-    let cancelled = false;
-    fetch(`/api/counties/${geoid}`)
+    const controller = new AbortController();
+    fetch(`/api/counties/${geoid}`, { signal: controller.signal })
       .then((res) => {
-        if (cancelled) return;
         if (res.ok) { res.json().then((c: County) => { setPending(c); setNotFound(false); }); }
         else { setPending(null); setNotFound(true); }
       })
-      .catch(() => { if (!cancelled) { setPending(null); setNotFound(false); } });
-    return () => { cancelled = true; };
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setPending(null);
+        setNotFound(false);
+      });
+    return () => { controller.abort(); };
   }, [geoid]);
 
   const addCounty = useCallback(() => {
@@ -526,6 +532,7 @@ export default function App() {
   const [targetTab, setTargetTab] = useState<TargetTab>("file");
   const [targetFile, setTargetFile] = useState<File | null>(null);
   const [selectedCounties, setSelectedCounties] = useState<Counties>([]);
+  const [elapsedSecs, setElapsedSecs] = useState(0);
   const mapRef = useRef<L.Map | null>(null);
 
   const targetReady = targetTab === "file" ? targetFile !== null : selectedCounties.length > 0;
@@ -547,6 +554,12 @@ export default function App() {
   const resultKey = result
     ? `${result.crs ?? "none"}-${result.confidence}`
     : "empty";
+
+  useEffect(() => {
+    if (!mutation.isPending) { setElapsedSecs(0); return; }
+    const id = setInterval(() => setElapsedSecs((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [mutation.isPending]);
 
   // Filter candidates GeoJSON to only the best match when the toggle is off
   const visibleCandidates = useMemo(() => {
@@ -590,9 +603,9 @@ export default function App() {
       </header>
 
       {/* Body */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-72 flex-none border-r overflow-y-auto p-4 flex flex-col gap-4">
+        <aside className="w-full md:w-72 flex-none border-b md:border-b-0 md:border-r overflow-y-auto p-4 flex flex-col gap-4 max-h-[45vh] md:max-h-none">
           <div className="flex flex-col gap-3">
             <DropZone
               label="Geometry File"
@@ -628,19 +641,39 @@ export default function App() {
             {mutation.isPending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Running…
+                {elapsedSecs > 0 ? `Running… (${elapsedSecs}s)` : "Running…"}
               </>
             ) : (
               "Run Inference"
             )}
           </button>
 
+          {(!rasFile || !targetReady) && (rasFile !== null || targetFile !== null || selectedCounties.length > 0) && !mutation.isPending && (
+            <div className="text-[11px] text-muted-foreground leading-snug">
+              {!rasFile && <p>• Geometry file required</p>}
+              {!targetReady && targetTab === "file" && <p>• Target boundary file required</p>}
+              {!targetReady && targetTab === "county" && <p>• Add at least one county</p>}
+            </div>
+          )}
+
+          {mutation.isPending && elapsedSecs >= 60 && (
+            <p className="text-[11px] text-muted-foreground">Still processing — large files may take several minutes.</p>
+          )}
+
           {mutation.isError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 flex gap-2 items-start">
-              <XCircle className="h-4 w-4 text-destructive shrink-0 mt-px" />
-              <p className="text-xs text-destructive leading-snug">
-                {(mutation.error as Error).message}
-              </p>
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 flex flex-col gap-2">
+              <div className="flex gap-2 items-start">
+                <XCircle className="h-4 w-4 text-destructive shrink-0 mt-px" />
+                <p className="text-xs text-destructive leading-snug">
+                  {(mutation.error as Error).message}
+                </p>
+              </div>
+              <button
+                className="self-start text-[11px] font-medium text-destructive/80 hover:text-destructive transition-colors underline underline-offset-2"
+                onClick={() => mutation.reset()}
+              >
+                Try Again
+              </button>
             </div>
           )}
 

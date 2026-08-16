@@ -1,4 +1,6 @@
 import json
+import logging
+import os
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -13,7 +15,9 @@ from shapely.geometry.base import BaseGeometry
 
 router = APIRouter(tags=["inference"])
 
+_logger = logging.getLogger(__name__)
 _engine = CRSInferenceEngine()
+_MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(500 * 1024 * 1024)))
 
 # HEC-RAS geometry file extensions (.g00 – .g12)
 _RAS_SUFFIXES = {f".g{i:02d}" for i in range(13)}
@@ -69,12 +73,13 @@ _FIPS_TO_STATE: dict[str, str] = {
 @router.get("/counties/{geoid}")
 async def get_county(geoid: str) -> JSONResponse:
     """Return county name and state abbreviation for an exact 5-digit FIPS GEOID."""
-    conn = sqlite3.connect(_COUNTIES_GPKG)
-    row = conn.execute(
-        "SELECT GEOID, NAME, STATEFP FROM counties WHERE GEOID = ?",
-        (geoid,),
-    ).fetchone()
-    conn.close()
+    if len(geoid) != 5 or not geoid.isdigit():
+        raise HTTPException(status_code=422, detail="GEOID must be exactly 5 digits.")
+    with sqlite3.connect(_COUNTIES_GPKG) as conn:
+        row = conn.execute(
+            "SELECT GEOID, NAME, STATEFP FROM counties WHERE GEOID = ?",
+            (geoid,),
+        ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"County GEOID '{geoid}' not found.")
     geoid_val, name, statefp = row
@@ -91,7 +96,10 @@ async def infer(
         raise HTTPException(status_code=422, detail="Provide either target_file or county_fips.")
 
     geom_bytes = await geometry_file.read()
+    if len(geom_bytes) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Geometry file exceeds the {_MAX_UPLOAD_BYTES // 1024 // 1024} MB limit.")
     filename = geometry_file.filename or "geometry"
+    _logger.info("Inference request: file=%s size=%d target=%s", filename, len(geom_bytes), "county" if county_fips else "file")
 
     try:
         geometry = _parse_geometry(filename, geom_bytes)
@@ -107,6 +115,8 @@ async def infer(
     else:
         assert target_file is not None
         target_bytes = await target_file.read()
+        if len(target_bytes) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"Target file exceeds the {_MAX_UPLOAD_BYTES // 1024 // 1024} MB limit.")
         suffix = Path(target_file.filename or "target.geojson").suffix.lower() or ".geojson"
         tmp_path: Path | None = None
         try:
@@ -126,7 +136,10 @@ async def infer(
     try:
         result = _engine.infer(geometry, target)
     except Exception as exc:
+        _logger.error("Inference failed: %s", exc)
         raise HTTPException(status_code=500, detail=f"Inference error: {exc}") from exc
+
+    _logger.info("Inference result: crs=%s confidence=%.3f method=%s", result.crs, result.confidence, result.method)
 
     candidates_geojson = None
     if not result.candidates.empty:

@@ -25,7 +25,7 @@ The FastAPI interactive docs are proxied at http://localhost:8080/api/docs.
 ### Backend
 
 ```bash
-cd backend
+cd crs-finder/backend
 pip install -e ".[dev]"
 uvicorn crs_finder.main:app --reload --port 8000
 ```
@@ -33,7 +33,7 @@ uvicorn crs_finder.main:app --reload --port 8000
 ### Frontend
 
 ```bash
-cd frontend
+cd crs-finder/frontend
 npm install
 npm run dev   # http://localhost:5173  (proxies /api → localhost:8000)
 ```
