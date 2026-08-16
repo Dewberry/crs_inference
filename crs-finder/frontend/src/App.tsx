@@ -38,11 +38,11 @@ type Counties = County[];
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 async function runInference(
-  rasFile: File,
+  geometryFile: File,
   target: { file: File } | { countyFips: string[] },
 ): Promise<InferResult> {
   const form = new FormData();
-  form.append("geometry_file", rasFile);
+  form.append("geometry_file", geometryFile);
   if ("file" in target) {
     form.append("target_file", target.file);
   } else {
@@ -59,10 +59,26 @@ async function runInference(
 // ─── Basemap selector ────────────────────────────────────────────────────────
 
 const BASEMAPS = [
-  { label: "Streets",   url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",                                                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' },
-  { label: "Satellite", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",          attribution: "Tiles &copy; Esri" },
-  { label: "Light",     url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",                                        attribution: '&copy; <a href="https://carto.com/">CARTO</a>' },
-  { label: "Dark",      url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",                                         attribution: '&copy; <a href="https://carto.com/">CARTO</a>' },
+  {
+    label: "Streets",
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  },
+  {
+    label: "Satellite",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution: "Tiles &copy; Esri",
+  },
+  {
+    label: "Light",
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+  },
+  {
+    label: "Dark",
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+  },
 ] as const;
 
 type BasemapLabel = typeof BASEMAPS[number]["label"];
@@ -542,7 +558,7 @@ function ResultCard({ result }: { result: InferResult }) {
 export default function App() {
   const [basemap, setBasemap] = useState<BasemapLabel>("Streets");
   const [showAllCandidates, setShowAllCandidates] = useState(false);
-  const [rasFile, setRasFile] = useState<File | null>(null);
+  const [geometryFile, setGeometryFile] = useState<File | null>(null);
   const [targetTab, setTargetTab] = useState<TargetTab>("file");
   const [targetFile, setTargetFile] = useState<File | null>(null);
   const [selectedCounties, setSelectedCounties] = useState<Counties>([]);
@@ -554,7 +570,7 @@ export default function App() {
   const mutation = useMutation({
     mutationFn: () =>
       runInference(
-        rasFile!,
+        geometryFile!,
         targetTab === "file"
           ? { file: targetFile! }
           : { countyFips: selectedCounties.map((c) => c.geoid) },
@@ -625,9 +641,9 @@ export default function App() {
               label="Geometry File"
               hint="HEC-RAS .g## · GeoJSON · GeoPackage"
               accept=".g00,.g01,.g02,.g03,.g04,.g05,.g06,.g07,.g08,.g09,.g10,.g11,.g12,.geojson,.json,.gpkg"
-              file={rasFile}
-              onChange={setRasFile}
-              tooltip="The geometry whose CRS you want to infer. Accepted formats: HEC-RAS .g## files, GeoJSON (.geojson / .json), or GeoPackage (.gpkg). Upload in the file’s original coordinates — do not reproject beforehand."
+              file={geometryFile}
+              onChange={setGeometryFile}
+              tooltip="The geometry whose CRS you want to infer. Accepted formats: HEC-RAS .g## files, GeoJSON (.geojson / .json), or GeoPackage (.gpkg). Upload in the file's original coordinates -- do not reproject beforehand."
             />
 
             {/* Target boundary — file upload or county lookup */}
@@ -656,7 +672,7 @@ export default function App() {
 
           <button
             className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 active:opacity-80"
-            disabled={!rasFile || !targetReady || mutation.isPending}
+            disabled={!geometryFile || !targetReady || mutation.isPending}
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending ? (
@@ -669,9 +685,9 @@ export default function App() {
             )}
           </button>
 
-          {(!rasFile || !targetReady) && (rasFile !== null || targetFile !== null || selectedCounties.length > 0) && !mutation.isPending && (
+          {(!geometryFile || !targetReady) && (geometryFile !== null || targetFile !== null || selectedCounties.length > 0) && !mutation.isPending && (
             <div className="text-[11px] text-muted-foreground leading-snug">
-              {!rasFile && <p>• Geometry file required</p>}
+              {!geometryFile && <p>• Geometry file required</p>}
               {!targetReady && targetTab === "file" && <p>• Target boundary file required</p>}
               {!targetReady && targetTab === "county" && <p>• Add at least one county</p>}
             </div>

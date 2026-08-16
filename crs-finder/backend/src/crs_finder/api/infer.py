@@ -10,6 +10,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from shapely.geometry import mapping
 
+import crs_inference as _crs_pkg
 from crs_inference import CRSInferenceEngine, RasParser, Target
 from shapely.geometry.base import BaseGeometry
 
@@ -50,8 +51,6 @@ def _parse_geometry(filename: str, data: bytes) -> BaseGeometry:
         f"Unsupported geometry file type '{suffix}'. "
         "Expected a HEC-RAS .g## file or a .geojson / .json / .gpkg file."
     )
-
-import crs_inference as _crs_pkg
 
 # Counties GeoPackage is bundled inside the crs_inference package
 _COUNTIES_GPKG = Path(_crs_pkg.__file__).parent / "data" / "counties.gpkg"
