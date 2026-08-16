@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   FileText,
   Hash,
+  Info,
   Loader2,
   MapPin,
   Upload,
@@ -172,9 +173,10 @@ interface DropZoneProps {
   accept: string;
   file: File | null;
   onChange: (f: File) => void;
+  tooltip?: string;
 }
 
-function DropZone({ label, hint, accept, file, onChange }: DropZoneProps) {
+function DropZone({ label, hint, accept, file, onChange, tooltip }: DropZoneProps) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -190,7 +192,19 @@ function DropZone({ label, hint, accept, file, onChange }: DropZoneProps) {
 
   return (
     <div>
-      <p className="text-xs font-medium text-foreground mb-1.5">{label}</p>
+      {label && (
+        <div className="relative flex items-center gap-1 mb-1.5 group/label">
+          <p className="text-xs font-medium text-foreground leading-none">{label}</p>
+          {tooltip && (
+            <>
+              <Info className="h-3 w-3 text-muted-foreground cursor-help shrink-0" aria-label="More information" />
+              <div className="absolute left-0 top-5 z-[2000] hidden group-hover/label:block w-56 rounded-md border bg-popover p-2.5 text-[11px] text-popover-foreground shadow-md leading-snug pointer-events-none">
+                {tooltip}
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <div
         role="button"
         tabIndex={0}
@@ -613,11 +627,18 @@ export default function App() {
               accept=".g00,.g01,.g02,.g03,.g04,.g05,.g06,.g07,.g08,.g09,.g10,.g11,.g12,.geojson,.json,.gpkg"
               file={rasFile}
               onChange={setRasFile}
+              tooltip="The geometry whose CRS you want to infer. Accepted formats: HEC-RAS .g## files, GeoJSON (.geojson / .json), or GeoPackage (.gpkg). Upload in the file’s original coordinates — do not reproject beforehand."
             />
 
             {/* Target boundary — file upload or county lookup */}
             <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium text-foreground">Target Boundary</p>
+              <div className="relative flex items-center gap-1 group/label">
+                <p className="text-xs font-medium text-foreground leading-none">Target Boundary</p>
+                <Info className="h-3 w-3 text-muted-foreground cursor-help shrink-0" aria-label="More information" />
+                <div className="absolute left-0 top-5 z-[2000] hidden group-hover/label:block w-56 rounded-md border bg-popover p-2.5 text-[11px] text-popover-foreground shadow-md leading-snug pointer-events-none">
+                  Upload or select the reference boundary the geometry should fall within once the correct CRS is applied. Use a GeoJSON or GeoPackage file, or search by US county FIPS code.
+                </div>
+              </div>
               <TabToggle value={targetTab} onChange={setTargetTab} />
               {targetTab === "file" ? (
                 <DropZone
