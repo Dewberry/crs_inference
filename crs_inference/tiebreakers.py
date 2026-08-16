@@ -5,19 +5,19 @@ import geopandas as gpd
 
 
 class Tiebreaker(Protocol):
-    """Rank tied CRS candidates. Return the GeoDataFrame filtered to the winner(s)."""
+    """Score CRS candidates for sorting. Add a '_tb_score' column; higher is better."""
 
-    def rank(self, candidates: gpd.GeoDataFrame) -> gpd.GeoDataFrame: ...
+    def score(self, candidates: gpd.GeoDataFrame) -> gpd.GeoDataFrame: ...
 
 
 class SmallestCodeTiebreaker:
     """Always-available fallback: prefer the numerically smallest authority code."""
 
-    def rank(self, candidates: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """Return candidates filtered to the row with the smallest numeric code."""
+    def score(self, candidates: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         candidates = candidates.copy()
-        candidates["_code_num"] = candidates["code"].astype(int)
-        return candidates[candidates["_code_num"] == candidates["_code_num"].min()]  # type: ignore[return-value]
+        # negate so smaller code sorts higher
+        candidates["_tb_score"] = -candidates["code"].astype(int)
+        return candidates
 
 
 class NHDTiebreaker:
@@ -31,12 +31,11 @@ class NHDTiebreaker:
             raise ValueError("nhd_path must be provided or NHD_GPKG_PATH must be set in the environment")
         self.nhd_path = Path(resolved)
 
-    def rank(self, candidates: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-        """Return candidates filtered to the row with the most NHD flowline intersections."""
+    def score(self, candidates: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         candidates = candidates.copy()
         in_4269 = candidates.to_crs("EPSG:4269")
-        candidates["_nhd_count"] = in_4269.geometry.map(self._count)
-        return candidates[candidates["_nhd_count"] == candidates["_nhd_count"].max()]  # type: ignore[return-value]
+        candidates["_tb_score"] = in_4269.geometry.map(self._count)
+        return candidates
 
     def _count(self, geom) -> int:
         """Count distinct NHD flowline segments intersecting geom."""

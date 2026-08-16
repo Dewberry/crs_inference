@@ -55,21 +55,21 @@ class CRSInferenceEngine:
         if not rows:
             return InferenceResult(crs=None, confidence=0.0, method="none", candidates=gpd.GeoDataFrame())
 
-        candidates = gpd.GeoDataFrame(rows, crs=LATENT_CRS)
-        candidates.sort_values(["overlap_pct", "code"], ascending=[False, True], inplace=True)
-        positive: gpd.GeoDataFrame = candidates[candidates["overlap_pct"] > 0].copy()  # type: ignore[assignment]
+        all_candidates = gpd.GeoDataFrame(rows, crs=LATENT_CRS)
+        positive: gpd.GeoDataFrame = all_candidates[all_candidates["overlap_pct"] > 0].copy()  # type: ignore[assignment]
 
-        best: gpd.GeoDataFrame = candidates[candidates["overlap_pct"] == candidates["overlap_pct"].max()].copy()  # type: ignore[assignment]
-        if best.empty or best.iloc[0]["overlap_pct"] < self._min_overlap:
+        if positive.empty or positive["overlap_pct"].max() < self._min_overlap:
             return InferenceResult(crs=None, confidence=0.0, method="none", candidates=positive)
 
-        if len(best) > 1:
-            for tb in self._tiebreakers:
-                best = tb.rank(best)
-                if len(best) == 1:
-                    break
+        sort_cols = ["overlap_pct"]
+        for i, tb in enumerate(self._tiebreakers):
+            col = f"_tb_score_{i}"
+            positive = tb.score(positive).rename(columns={"_tb_score": col})
+            sort_cols.append(col)
 
-        winner = best.iloc[0]
+        positive.sort_values(sort_cols, ascending=False, inplace=True)
+
+        winner = positive.iloc[0]
         method = "local" if crs_list is target.local_projections else "non_local"
         return InferenceResult(
             crs=f"{winner['authority']}:{winner['code']}",
