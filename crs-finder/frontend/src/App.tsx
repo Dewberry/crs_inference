@@ -103,6 +103,67 @@ function MapAutoFit({ candidates }: { candidates: GeoJsonObject | null }) {
   return null;
 }
 
+function MapRef({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> }) {
+  const map = useMap();
+  useEffect(() => { mapRef.current = map; }, [map, mapRef]);
+  return null;
+}
+
+// Ray-casting point-in-polygon for a single GeoJSON ring ([lng, lat] pairs)
+function pointInRing(lng: number, lat: number, ring: number[][]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if ((yi > lat) !== (yj > lat) && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi)
+      inside = !inside;
+  }
+  return inside;
+}
+
+function pointInFeature(lng: number, lat: number, geometry: { type: string; coordinates: unknown }): boolean {
+  const { type, coordinates } = geometry as { type: string; coordinates: number[][][] | number[][][][] };
+  if (type === "Polygon") return pointInRing(lng, lat, (coordinates as number[][][])[0]);
+  if (type === "MultiPolygon") return (coordinates as number[][][][]).some((p) => pointInRing(lng, lat, p[0]));
+  return false;
+}
+
+type CandidateFeatureProps = { crs: string; is_best: boolean; overlap_pct: number };
+type CandidateFeatureShape = { properties?: CandidateFeatureProps; geometry: { type: string; coordinates: unknown } };
+
+function MapCandidateClickHandler({ candidates, showAll }: { candidates: GeoJsonObject | null; showAll: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!candidates || !("features" in candidates)) return;
+    const col = candidates as { features: CandidateFeatureShape[] };
+
+    function onClick(e: L.LeafletMouseEvent) {
+      const { lng, lat } = e.latlng;
+      const hits = col.features
+        .filter((f) => f.properties?.crs && f.geometry && pointInFeature(lng, lat, f.geometry))
+        .filter((f) => showAll || f.properties?.is_best)
+        .sort((a, b) => (b.properties?.overlap_pct ?? 0) - (a.properties?.overlap_pct ?? 0));
+      if (hits.length === 0) return;
+
+      const el = document.createElement("div");
+      el.style.cssText = "display:flex;flex-direction:column;gap:2px;min-width:120px";
+      hits.forEach((f) => {
+        const row = document.createElement("div");
+        row.style.cssText = f.properties?.is_best
+          ? "font-weight:600;font-family:monospace"
+          : "font-family:monospace;opacity:0.8";
+        row.textContent = f.properties!.crs;
+        el.appendChild(row);
+      });
+      L.popup().setLatLng(e.latlng).setContent(el).openOn(map);
+    }
+
+    map.on("click", onClick);
+    return () => { map.off("click", onClick); };
+  }, [candidates, showAll, map]);
+  return null;
+}
+
 // ─── Drop Zone ────────────────────────────────────────────────────────────────
 
 interface DropZoneProps {
@@ -318,10 +379,12 @@ function CandidateList({
   candidates,
   showAll,
   onToggle,
+  onCandidateClick,
 }: {
   candidates: GeoJsonObject | null;
   showAll: boolean;
   onToggle: () => void;
+  onCandidateClick?: (crs: string) => void;
 }) {
   if (!candidates || !("features" in candidates)) return null;
   const features = (candidates as { features: { properties: CandidateFeature }[] }).features
@@ -345,10 +408,14 @@ function CandidateList({
       {visible.map((c, i) => (
         <div
           key={c.crs}
+          role="button"
+          tabIndex={0}
           className={[
-            "rounded-lg border px-3 py-2 flex flex-col gap-1",
+            "rounded-lg border px-3 py-2 flex flex-col gap-1 cursor-pointer transition-opacity hover:opacity-80",
             c.is_best ? "border-green-500/40 bg-green-500/5" : "bg-card",
           ].join(" ")}
+          onClick={() => onCandidateClick?.(c.crs)}
+          onKeyDown={(e) => e.key === "Enter" && onCandidateClick?.(c.crs)}
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
@@ -459,6 +526,7 @@ export default function App() {
   const [targetTab, setTargetTab] = useState<TargetTab>("file");
   const [targetFile, setTargetFile] = useState<File | null>(null);
   const [selectedCounties, setSelectedCounties] = useState<Counties>([]);
+  const mapRef = useRef<L.Map | null>(null);
 
   const targetReady = targetTab === "file" ? targetFile !== null : selectedCounties.length > 0;
 
@@ -495,6 +563,18 @@ export default function App() {
         : { color: "var(--color-candidate)", weight: 1.5, opacity: 0.5 },
     [],
   );
+
+  const handleCandidateClick = useCallback((crs: string) => {
+    if (!result?.candidates || !mapRef.current) return;
+    if (!("features" in result.candidates)) return;
+    const col = result.candidates as { features: { properties?: { crs?: string } }[] };
+    const feature = col.features.find((f) => f.properties?.crs === crs);
+    if (!feature) return;
+    try {
+      const bounds = L.geoJSON(feature as Parameters<typeof L.geoJSON>[0]).getBounds();
+      if (bounds.isValid()) mapRef.current.fitBounds(bounds, { padding: [48, 48] });
+    } catch { /* ignore */ }
+  }, [result?.candidates]);
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
@@ -570,6 +650,7 @@ export default function App() {
               candidates={result.candidates}
               showAll={showAllCandidates}
               onToggle={() => setShowAllCandidates((v) => !v)}
+              onCandidateClick={handleCandidateClick}
             />
           )}
         </aside>
@@ -625,6 +706,8 @@ export default function App() {
             </Pane>
 
             <MapAutoFit candidates={result?.candidates ?? null} />
+            <MapRef mapRef={mapRef} />
+            <MapCandidateClickHandler candidates={result?.candidates ?? null} showAll={showAllCandidates} />
           </MapContainer>
 
           <BasemapSelector value={basemap} onChange={setBasemap} />
