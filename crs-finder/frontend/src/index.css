@@ -24,6 +24,15 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
+
+    /* map layer / chart colours */
+    --color-best: #e24800;
+    --color-candidate: #920592;
+    --color-target: #01060f;
+    --color-geometry: #f97316;
+    --color-confidence-high: #22c55e;
+    --color-confidence-mid: #f59e0b;
+    --color-confidence-low: #ef4444;
   }
 
   .dark {

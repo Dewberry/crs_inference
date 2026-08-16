@@ -331,7 +331,12 @@ function CandidateList({
                 className="h-full rounded-full"
                 style={{
                   width: `${(c.overlap_pct * 100).toFixed(1)}%`,
-                  backgroundColor: c.is_best ? "#22c55e" : "#94a3b8",
+                  backgroundColor:
+                    c.overlap_pct > 0.7
+                      ? "var(--color-confidence-high)"
+                      : c.overlap_pct > 0.4
+                        ? "var(--color-confidence-mid)"
+                        : "var(--color-confidence-low)",
                 }}
               />
             </div>
@@ -349,7 +354,12 @@ function CandidateList({
 
 function ResultCard({ result }: { result: InferResult }) {
   const pct = Math.round(result.confidence * 100);
-  const barColor = pct > 70 ? "#22c55e" : pct > 40 ? "#f59e0b" : "#ef4444";
+  const barColor =
+    pct > 70
+      ? "var(--color-confidence-high)"
+      : pct > 40
+        ? "var(--color-confidence-mid)"
+        : "var(--color-confidence-low)";
   const methodLabel =
     { local: "Local CRS", non_local: "Non-local CRS", none: "No match" }[result.method];
   const candidateCount =
@@ -447,8 +457,8 @@ export default function App() {
   const candidateStyle = useCallback(
     (feature?: { properties?: { is_best?: boolean } }) =>
       feature?.properties?.is_best
-        ? { color: "#22c55e", weight: 3, opacity: 1 }
-        : { color: "#94a3b8", weight: 1.5, opacity: 0.5 },
+        ? { color: "var(--color-best)", weight: 3, opacity: 1 }
+        : { color: "var(--color-candidate)", weight: 1.5, opacity: 0.5 },
     [],
   );
 
@@ -557,7 +567,7 @@ export default function App() {
               <GeoJSON
                 key={`target-${resultKey}`}
                 data={result.target}
-                style={{ color: "#3b82f6", fillColor: "#3b82f6", fillOpacity: 0.06, weight: 1.5, dashArray: "6 4" }}
+                style={{ color: "var(--color-target)", fillColor: "var(--color-target)", fillOpacity: 0.06, weight: 1.5, dashArray: "6 4" }}
               />
             )}
 
@@ -575,7 +585,7 @@ export default function App() {
                 <GeoJSON
                   key={`geometry-${resultKey}`}
                   data={result.geometry}
-                  style={{ color: "#f97316", weight: 3, opacity: 1 }}
+                  style={{ color: "var(--color-geometry)", weight: 3, opacity: 1 }}
                 />
               )}
             </Pane>
